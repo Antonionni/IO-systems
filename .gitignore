@@ -1,0 +1,9 @@
+*.ko
+*.ko.*
+*.mod
+*.mod.*
+*.o
+*.o.*
+modules.order
+Module.symvers
+.cache.mk
