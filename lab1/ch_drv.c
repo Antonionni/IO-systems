@@ -33,7 +33,7 @@ static ssize_t my_read(struct file *f, char __user *buf, size_t len, loff_t *off
 		  printk(KERN_INFO "Driver: cannot read from not opened file()\n");
 		  return -1;
 	}
-  char* data = kmalloc(len, GFP_USER);
+  char* data = kcalloc(len, sizeof(char), GFP_USER);
 
   set_fs(KERNEL_DS);
   if (off != NULL) {
@@ -41,21 +41,24 @@ static ssize_t my_read(struct file *f, char __user *buf, size_t len, loff_t *off
   }
   set_fs(USER_DS);
 
-  size_t rlen = strlen(data);
-
-  if (rlen == 0) return 0;
+  if (strlen(data) == 0) {
+    kfree(data);
+    return 0;
+  }
 
   printk(KERN_INFO "Driver: read()\n");
 
   if(copy_to_user(buf, data, len) != 0) {
+    kfree(data);
     return -EFAULT;
   }
 
+  kfree(data);
   return len;
 }
 
 static ssize_t my_write(struct file *f, const char __user *buf,  size_t len, loff_t *off) {
-  char * data = kmalloc(len, GFP_USER);
+  char *data = kcalloc(len, sizeof(char), GFP_USER);
   if (copy_from_user(data, buf, len) != 0) {
     kfree(data);
     return -EFAULT;
@@ -71,6 +74,7 @@ static ssize_t my_write(struct file *f, const char __user *buf,  size_t len, lof
     WORK_FILE = subbuff;
 
     file = filp_open(WORK_FILE, O_RDWR|O_CREAT, 0644);
+    kfree(data);
     return len;
   } else if (starts_with(data, "close")) { 
     if (file != NULL) {
@@ -79,9 +83,11 @@ static ssize_t my_write(struct file *f, const char __user *buf,  size_t len, lof
     } else {
 		  printk(KERN_INFO "Driver: cannot close file which is not opened()\n");
 	  }
+    kfree(data);
 	  return len;
   } else if (file == NULL) {
 	  printk(KERN_INFO "Driver: cannot write to not opened file()\n");
+    kfree(data);
 	  return -1;
   }
   printk(KERN_INFO "string = %s", data);
@@ -92,8 +98,8 @@ static ssize_t my_write(struct file *f, const char __user *buf,  size_t len, lof
   set_fs(USER_DS);
 
   printk(KERN_INFO "Driver: write() len = %ld, %lld\n", len, file->f_pos);
+  
   kfree(data);
-
   return len;
 }
 
@@ -110,12 +116,19 @@ static bool starts_with(const char *a, const char *b) {
    return 0;
 }
 
-static char* count_symbols(const char* string) {
-  int beforelen = strlen(string);
-  int len = strlen(string);
+int countDigit(long long n) { 
+    int count = 0; 
+    while (n != 0) { 
+        n = n / 10; 
+        ++count; 
+    } 
+    return count; 
+}
 
-  char* result = kcalloc(14, sizeof(char), GFP_USER);
-  sprintf(result, "%d\n", len);
+static char* count_symbols(const char* string) {
+  int len = strlen(string);
+  char* result = kcalloc(countDigit(len - 1) + 1, sizeof(char), GFP_USER);
+  sprintf(result, "%d\n", len - 1);
 
   printk(KERN_INFO "result: %s", result);
   return result;

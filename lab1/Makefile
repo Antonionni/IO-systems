@@ -14,4 +14,4 @@ close:
 	echo "close" > /dev/var1
 
 write:
-	echo "test1" > /dev/var1
+	echo "Hello, my name is" > /dev/var1
