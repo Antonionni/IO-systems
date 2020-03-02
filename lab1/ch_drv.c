@@ -8,70 +8,96 @@
 #include <linux/cdev.h>
 #include <linux/uaccess.h>
 #include <linux/slab.h>
+#include <linux/string.h>
 
 static dev_t first;
 static struct cdev c_dev; 
 static struct class *cl;
+static char* WORK_FILE = "work_file";
+static struct file * file;
+static bool starts_with(const char *, const char *);
+static char* count_symbols(const char*);
 
-static int my_open(struct inode *i, struct file *f)
-{
+static int my_open(struct inode *i, struct file *f) {
   printk(KERN_INFO "Driver: open()\n");
   return 0;
 }
 
-static int my_close(struct inode *i, struct file *f)
-{
+static int my_close(struct inode *i, struct file *f) {
   printk(KERN_INFO "Driver: close()\n");
   return 0;
 }
 
-static ssize_t my_read(struct file *f, char __user *buf, size_t len, loff_t *off)
-{
+static ssize_t my_read(struct file *f, char __user *buf, size_t len, loff_t *off) {
+	if (file == NULL) {
+		  printk(KERN_INFO "Driver: cannot read from not opened file()\n");
+		  return -1;
+	}
+  char* data = kmalloc(len, GFP_USER);
 
-  char data [] = "Data from kernel module\n";
+  set_fs(KERNEL_DS);
+  if (off != NULL) {
+  	size_t wlen = vfs_read(file, data, len, off);
+  }
+  set_fs(USER_DS);
+
   size_t rlen = strlen(data);
+
+  if (rlen == 0) return 0;
 
   printk(KERN_INFO "Driver: read()\n");
 
-  if(*off != rlen)
-    *off = rlen;
-  else
-    return 0;
-
-  if(copy_to_user(buf, data, rlen) != 0) {
+  if(copy_to_user(buf, data, len) != 0) {
     return -EFAULT;
   }
 
-  return rlen;
+  return len;
 }
 
-static ssize_t my_write(struct file *f, const char __user *buf,  size_t len, loff_t *off)
-{
-
-  char fname[] = "wfile";
-  size_t wlen = 0;
-  struct file* test_file = filp_open(fname, O_RDWR|O_CREAT, 0644);
+static ssize_t my_write(struct file *f, const char __user *buf,  size_t len, loff_t *off) {
   char * data = kmalloc(len, GFP_USER);
-
-  if(copy_from_user(data, buf, len) != 0) {
+  if (copy_from_user(data, buf, len) != 0) {
     kfree(data);
     return -EFAULT;
   }
-  
-  set_fs(KERNEL_DS);
+  if (starts_with(data, "open ")) { 
+    if (file != NULL) {
+      filp_close(file, NULL);
+    }
+    int fileNameLen = strlen(data) - 5;
+    char subbuff[fileNameLen];
+    memcpy( subbuff, &data[5], fileNameLen);
+    subbuff[fileNameLen] = '\0';
+    WORK_FILE = subbuff;
 
-  wlen = vfs_write(test_file, data, len, &test_file->f_pos);
+    file = filp_open(WORK_FILE, O_RDWR|O_CREAT, 0644);
+    return len;
+  } else if (starts_with(data, "close")) { 
+    if (file != NULL) {
+        filp_close(file, NULL);
+        file = NULL;
+    } else {
+		  printk(KERN_INFO "Driver: cannot close file which is not opened()\n");
+	  }
+	  return len;
+  } else if (file == NULL) {
+	  printk(KERN_INFO "Driver: cannot write to not opened file()\n");
+	  return -1;
+  }
+  printk(KERN_INFO "string = %s", data);
+  set_fs(KERNEL_DS);
+  char * newData = count_symbols(data);
+  size_t wlen = vfs_write(file, newData, len, &file->f_pos);
   
   set_fs(USER_DS);
 
-  printk(KERN_INFO "Driver: write() len = %ld, %lld\n", len, test_file->f_pos);
+  printk(KERN_INFO "Driver: write() len = %ld, %lld\n", len, file->f_pos);
   kfree(data);
 
   return len;
 }
 
-static struct file_operations mychdev_fops =
-{
+static struct file_operations mychdev_fops = {
   .owner = THIS_MODULE,
   .open = my_open,
   .release = my_close,
@@ -79,43 +105,53 @@ static struct file_operations mychdev_fops =
   .write = my_write
 };
  
-static int __init ch_drv_init(void)
-{
-    printk(KERN_INFO "Hello!\n");
-    if (alloc_chrdev_region(&first, 0, 1, "ch_dev") < 0) 
-	{
-		return -1;
-	}
-    if ((cl = class_create(THIS_MODULE, "chardrv")) == NULL)
-	{
-		unregister_chrdev_region(first, 1);
-		return -1;
-	}
-    if (device_create(cl, NULL, first, NULL, "mychdev") == NULL) 
-	{
-      class_destroy(cl);
-      unregister_chrdev_region(first, 1);
-      return -1;
-	}
-    cdev_init(&c_dev, &mychdev_fops);
-    
-    if (cdev_add(&c_dev, first, 1) == -1)
-	{
-      device_destroy(cl, first);
-      class_destroy(cl);
-      unregister_chrdev_region(first, 1);
-      return -1;
-	}
-    return 0;
+static bool starts_with(const char *a, const char *b) {
+   if(strncmp(a, b, strlen(b)) == 0) return 1;
+   return 0;
 }
- 
-static void __exit ch_drv_exit(void)
-{
-    cdev_del(&c_dev);
+
+static char* count_symbols(const char* string) {
+  int beforelen = strlen(string);
+  int len = strlen(string);
+
+  char* result = kcalloc(14, sizeof(char), GFP_USER);
+  sprintf(result, "%d\n", len);
+
+  printk(KERN_INFO "result: %s", result);
+  return result;
+}
+
+static int __init ch_drv_init(void) {
+  printk(KERN_INFO "Hello!\n");
+  if (alloc_chrdev_region(&first, 0, 1, "ch_dev") < 0) {
+    return -1;
+  }
+  if ((cl = class_create(THIS_MODULE, "chardrv")) == NULL) {
+	  unregister_chrdev_region(first, 1);
+	  return -1;
+  }
+  if (device_create(cl, NULL, first, NULL, "var1") == NULL) {
+    class_destroy(cl);
+    unregister_chrdev_region(first, 1);
+    return -1;
+  }
+  cdev_init(&c_dev, &mychdev_fops);
+    
+  if (cdev_add(&c_dev, first, 1) == -1) {
     device_destroy(cl, first);
     class_destroy(cl);
     unregister_chrdev_region(first, 1);
-    printk(KERN_INFO "Bye!!!\n");
+    return -1;
+  }
+  return 0;
+}
+ 
+static void __exit ch_drv_exit(void) {
+  cdev_del(&c_dev);
+  device_destroy(cl, first);
+  class_destroy(cl);
+  unregister_chrdev_region(first, 1);
+  printk(KERN_INFO "Bye!!!\n");
 }
  
 module_init(ch_drv_init);
