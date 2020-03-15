@@ -7,11 +7,11 @@ all:
 clean:
 	make -C /lib/modules/$(shell uname -r)/build M="$(PWD)" clean
 open:
-	echo "open testfile" > /dev/var1
+	echo "open testfile" > /dev/var2
 read:
-	cat /dev/var1
+	cat /dev/var2
 close:
-	echo "close" > /dev/var1
+	echo "close" > /dev/var2
 
 write:
-	echo "Hello, my name is" > /dev/var1
+	echo "test12" >> /dev/var2
