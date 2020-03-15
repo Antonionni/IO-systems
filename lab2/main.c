@@ -10,7 +10,7 @@
 #include <linux/string.h>
 
 
-#define MEMSIZE 0xF000 // Size of Ram disk in sectors
+#define MEMSIZE 0x19000 // Size of Ram disk in sectors
 int c = 0; //Variable for Major Number 
 
 #define SECTOR_SIZE 512
@@ -72,18 +72,30 @@ static PartTable def_part_table =
 	},
 	{
 		boot_type: 0x00,
-		start_head: 0x4,
-		start_sec: 0x1,
+		start_sec: 0x2,
+		start_head: 0x0,
 		start_cyl: 0x0,
-		part_type: 0x05, // extended partition type
+		part_type: 0x83,
+		end_head: 0x3,
 		end_sec: 0x20,
-		end_head: 0xB,
 		end_cyl: 0x9F,
 		abs_start_sec: 0x5000,
-		sec_in_part: 0xA000
+		sec_in_part: 0xA000 // 20Mbyte
+	},
+	{
+		boot_type: 0x00,
+		start_sec: 0x1,
+		start_head: 0x8,
+		start_cyl: 0x0,
+		part_type: 0x05, // extended partition type
+		end_head: 0xB,
+		end_sec: 0x20,
+		end_cyl: 0x9F,
+		abs_start_sec: 0xF000,
+		sec_in_part: 0xA000 // 20Mbyte
 	}
 };
-static unsigned int def_log_part_br_abs_start_sector[] = {0x5000, 0xA000};
+static unsigned int def_log_part_br_abs_start_sector[] = {0xF000, 0x14000};
 static const PartTable def_log_part_table[] =
 {
 	{
